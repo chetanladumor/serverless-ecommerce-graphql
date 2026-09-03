@@ -94,3 +94,31 @@ npm run typecheck
 npm run build:backend
 npm run build:frontend
 ```
+
+
+
+
+
+
+To install axois in frontend
+npm install axios --workspace=packages/frontend
+
+
+To install a shared dev tool across the entire repo:
+
+npm install -D prettier
+
+# Start backend in watch mode (auto-restarts on code changes)
+npm run dev --workspace=packages/backend
+
+# Generate Prisma client
+npm run prisma:generate --workspace=packages/backend
+
+# Push schema changes to database
+npm run prisma:push --workspace=packages/backend
+
+# Open visual database browser in your browser
+npm run prisma:studio --workspace=packages/backend
+
+# Build with esbuild for production / AWS Lambda
+npm run build --workspace=packages/backend
