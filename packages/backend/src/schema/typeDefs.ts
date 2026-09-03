@@ -22,13 +22,20 @@ export const typeDefs = gql`
     password: String!
   }
 
+  input LoginInput {
+    email: String!
+    password: String!
+  }
+
   # --- Queries ---
   type Query {
     health: String!
+    me: User
   }
 
   # --- Mutations ---
   type Mutation {
     register(input: RegisterInput!): AuthPayload!
+    login(input: LoginInput!): AuthPayload!
   }
 `;

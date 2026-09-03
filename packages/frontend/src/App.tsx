@@ -1,38 +1,63 @@
 import { useState, useEffect } from "react";
-import { RegisterModal } from "./components/RegisterModal";
-import { User, LogOut, Sparkles, CheckCircle2 } from "lucide-react";
-
-interface UserData {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  createdAt: string;
-}
+import { useQuery } from "@apollo/client";
+import { ME_QUERY } from "./graphql/queries";
+import { apolloClient } from "./apollo/client";
+import { AuthModal, UserData } from "./components/AuthModal";
+import { User, LogOut, Sparkles, CheckCircle2, ShieldCheck, ShoppingBag } from "lucide-react";
 
 export function App() {
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
 
+  // Auto-fetch current user profile with me query if token exists
+  const token = localStorage.getItem("token");
+  const { data: meData, refetch: refetchMe } = useQuery(ME_QUERY, {
+    skip: !token,
+    onCompleted: (data) => {
+      if (data?.me) {
+        setCurrentUser(data.me);
+        localStorage.setItem("user", JSON.stringify(data.me));
+      }
+    },
+    onError: () => {
+      // Token invalid or expired
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setCurrentUser(null);
+    },
+  });
+
   useEffect(() => {
-    const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch {
-        localStorage.removeItem("user");
+    if (meData?.me) {
+      setCurrentUser(meData.me);
+    } else {
+      const savedUser = localStorage.getItem("user");
+      if (savedUser) {
+        try {
+          setCurrentUser(JSON.parse(savedUser));
+        } catch {
+          localStorage.removeItem("user");
+        }
       }
     }
-  }, []);
+  }, [meData]);
 
-  const handleRegisterSuccess = (user: UserData) => {
-    setCurrentUser(user);
+  const openAuth = (mode: "login" | "register") => {
+    setAuthMode(mode);
+    setIsAuthOpen(true);
   };
 
-  const handleLogout = () => {
+  const handleAuthSuccess = (user: UserData) => {
+    setCurrentUser(user);
+    refetchMe();
+  };
+
+  const handleLogout = async () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setCurrentUser(null);
+    await apolloClient.resetStore();
   };
 
   return (
@@ -72,7 +97,7 @@ export function App() {
                 fontWeight: 800,
               }}
             >
-              C
+              <ShoppingBag size={20} />
             </div>
             <div>
               <h1
@@ -141,20 +166,36 @@ export function App() {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => setIsRegisterOpen(true)}
-                style={{
-                  padding: "10px 20px",
-                  backgroundColor: "var(--primary)",
-                  color: "#ffffff",
-                  fontWeight: 600,
-                  fontSize: "0.9rem",
-                  borderRadius: "var(--radius-sm)",
-                  boxShadow: "var(--shadow-glow)",
-                }}
-              >
-                Create Account
-              </button>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => openAuth("login")}
+                  style={{
+                    padding: "9px 18px",
+                    backgroundColor: "transparent",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border-color)",
+                  }}
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => openAuth("register")}
+                  style={{
+                    padding: "9px 18px",
+                    backgroundColor: "var(--primary)",
+                    color: "#ffffff",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    borderRadius: "var(--radius-sm)",
+                    boxShadow: "var(--shadow-glow)",
+                  }}
+                >
+                  Create Account
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -174,43 +215,58 @@ export function App() {
         >
           <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 14px", borderRadius: "999px", backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--primary)", fontSize: "0.8rem", fontWeight: 700, marginBottom: "16px" }}>
             <Sparkles size={14} />
-            <span>STEP 3 • AUTHENTICATION PIPELINE</span>
+            <span>STEP 4 • LOGIN & AUTH CONTEXT VERIFIED</span>
           </div>
 
           <h2 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "12px", color: "var(--text-primary)" }}>
-            GraphQL User Registration
+            Full-Stack Authentication Pipeline
           </h2>
           <p style={{ color: "var(--text-secondary)", fontSize: "1rem", maxWidth: "680px", lineHeight: 1.6 }}>
-            Users register through a GraphQL mutation with strict input validation, <strong>bcrypt</strong> password hashing (10 salt rounds), <strong>PostgreSQL</strong> persistence via Prisma, and <strong>JWT</strong> token signing.
+            Users can register, log in with bcrypt password verification, and securely query their session via GraphQL <code>me</code> queries powered by Express context JWT token extraction.
           </p>
 
           {currentUser ? (
             <div
               style={{
                 marginTop: "28px",
-                padding: "20px",
-                backgroundColor: "rgba(16, 185, 129, 0.1)",
+                padding: "24px",
+                backgroundColor: "rgba(16, 185, 129, 0.08)",
                 border: "1px solid rgba(16, 185, 129, 0.3)",
                 borderRadius: "var(--radius-md)",
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "14px",
               }}
             >
-              <CheckCircle2 size={24} style={{ color: "var(--success)", flexShrink: 0, marginTop: "2px" }} />
-              <div>
-                <h4 style={{ color: "var(--success)", fontSize: "1.1rem", fontWeight: 700, marginBottom: "4px" }}>
-                  Registration Successful!
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+                <CheckCircle2 size={24} style={{ color: "var(--success)" }} />
+                <h4 style={{ color: "var(--success)", fontSize: "1.15rem", fontWeight: 700 }}>
+                  Active User Session Confirmed
                 </h4>
-                <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                  Logged in as <strong>{currentUser.name}</strong> ({currentUser.email}). Your JWT session token is securely stored in <code>localStorage</code>.
-                </p>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginTop: "16px" }}>
+                <div style={{ padding: "12px 16px", backgroundColor: "var(--bg-main)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>User ID</div>
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-primary)", marginTop: "4px", fontFamily: "monospace" }}>{currentUser.id}</div>
+                </div>
+
+                <div style={{ padding: "12px 16px", backgroundColor: "var(--bg-main)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>Name & Email</div>
+                  <div style={{ fontSize: "0.9rem", color: "var(--text-primary)", marginTop: "4px", fontWeight: 600 }}>{currentUser.name}</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{currentUser.email}</div>
+                </div>
+
+                <div style={{ padding: "12px 16px", backgroundColor: "var(--bg-main)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>Role & Permissions</div>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "6px", color: "var(--success)", fontWeight: 700, fontSize: "0.85rem" }}>
+                    <ShieldCheck size={16} />
+                    <span>{currentUser.role}</span>
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
-            <div style={{ marginTop: "28px" }}>
+            <div style={{ marginTop: "28px", display: "flex", gap: "12px" }}>
               <button
-                onClick={() => setIsRegisterOpen(true)}
+                onClick={() => openAuth("login")}
                 style={{
                   padding: "12px 24px",
                   backgroundColor: "var(--primary)",
@@ -221,17 +277,32 @@ export function App() {
                   boxShadow: "var(--shadow-glow)",
                 }}
               >
-                Try Registering a User
+                Sign In to Your Account
+              </button>
+              <button
+                onClick={() => openAuth("register")}
+                style={{
+                  padding: "12px 24px",
+                  backgroundColor: "transparent",
+                  color: "var(--text-primary)",
+                  fontWeight: 600,
+                  fontSize: "0.95rem",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border-color)",
+                }}
+              >
+                Create New Account
               </button>
             </div>
           )}
         </div>
       </main>
 
-      <RegisterModal
-        isOpen={isRegisterOpen}
-        onClose={() => setIsRegisterOpen(false)}
-        onSuccess={handleRegisterSuccess}
+      <AuthModal
+        isOpen={isAuthOpen}
+        initialMode={authMode}
+        onClose={() => setIsAuthOpen(false)}
+        onSuccess={handleAuthSuccess}
       />
     </div>
   );
