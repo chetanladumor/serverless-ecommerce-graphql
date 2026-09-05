@@ -48,11 +48,21 @@ export const typeDefs = gql`
     stock: Int!
   }
 
+  input ProductFilterInput {
+    search: String
+    category: String
+    minPrice: Float
+    maxPrice: Float
+    sortBy: String # "price_asc" | "price_desc" | "rating_desc" | "newest"
+  }
+
   # --- Queries ---
   type Query {
     health: String!
     me: User
-    products: [Product!]!
+    products(filter: ProductFilterInput): [Product!]!
+    categories: [String!]!
+    product(id: ID!): Product
   }
 
   # --- Mutations ---

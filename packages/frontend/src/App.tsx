@@ -1,18 +1,20 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@apollo/client";
-import { ME_QUERY, PRODUCTS_QUERY } from "./graphql/queries";
+import { ME_QUERY, PRODUCTS_QUERY, CATEGORIES_QUERY } from "./graphql/queries";
 import { apolloClient } from "./apollo/client";
 import { AuthModal, UserData } from "./components/AuthModal";
 import { AdminProductModal } from "./components/AdminProductModal";
 import {
   User,
   LogOut,
-  Sparkles,
   ShoppingBag,
   Plus,
   Star,
   Package,
-  Layers,
+  Search,
+  SlidersHorizontal,
+  X,
+  Zap,
 } from "lucide-react";
 
 export interface ProductData {
@@ -33,7 +35,12 @@ export function App() {
   const [isAdminProductOpen, setIsAdminProductOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
 
-  // 1. Auto-fetch current user profile with me query if token exists
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [sortBy, setSortBy] = useState<"newest" | "price_asc" | "price_desc" | "rating_desc">("newest");
+
+  // 1. Auto-fetch current user profile
   const token = localStorage.getItem("token");
   const { data: meData, refetch: refetchMe } = useQuery(ME_QUERY, {
     skip: !token,
@@ -44,15 +51,30 @@ export function App() {
       }
     },
     onError: () => {
-      // Token invalid or expired
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       setCurrentUser(null);
     },
   });
 
-  // 2. Fetch products catalog
-  const { data: productsData, loading: productsLoading, refetch: refetchProducts } = useQuery(PRODUCTS_QUERY);
+  // 2. Fetch categories
+  const { data: categoriesData } = useQuery(CATEGORIES_QUERY);
+
+  // 3. Fetch products catalog with dynamic filters
+  const {
+    data: productsData,
+    loading: productsLoading,
+    refetch: refetchProducts,
+  } = useQuery(PRODUCTS_QUERY, {
+    variables: {
+      filter: {
+        search: searchQuery.trim() || undefined,
+        category: selectedCategory !== "All" ? selectedCategory : undefined,
+        sortBy,
+      },
+    },
+    fetchPolicy: "cache-and-network",
+  });
 
   useEffect(() => {
     if (meData?.me) {
@@ -87,8 +109,16 @@ export function App() {
     refetchProducts();
   };
 
+  const resetFilters = () => {
+    setSearchQuery("");
+    setSelectedCategory("All");
+    setSortBy("newest");
+  };
+
   const products: ProductData[] = productsData?.products || [];
+  const categories: string[] = ["All", ...(categoriesData?.categories || [])];
   const isAdmin = currentUser?.role === "ADMIN";
+  const hasActiveFilters = searchQuery !== "" || selectedCategory !== "All" || sortBy !== "newest";
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -253,30 +283,30 @@ export function App() {
       </header>
 
       {/* Main Content */}
-      <main style={{ flex: 1, maxWidth: "1200px", margin: "0 auto", padding: "40px 24px", width: "100%" }}>
+      <main style={{ flex: 1, maxWidth: "1200px", margin: "0 auto", padding: "36px 24px", width: "100%" }}>
         {/* Banner */}
         <div
           style={{
             background: "linear-gradient(180deg, var(--bg-card) 0%, rgba(30, 41, 59, 0.4) 100%)",
-            padding: "36px",
+            padding: "32px",
             borderRadius: "var(--radius-lg)",
             border: "1px solid var(--border-color)",
             boxShadow: "var(--shadow-card)",
-            marginBottom: "36px",
+            marginBottom: "32px",
           }}
         >
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 14px", borderRadius: "999px", backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--primary)", fontSize: "0.8rem", fontWeight: 700, marginBottom: "16px" }}>
-            <Sparkles size={14} />
-            <span>STEP 5 • ADMIN PRODUCT MANAGEMENT & REACT-HOOK-FORM + ZOD</span>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 14px", borderRadius: "999px", backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--primary)", fontSize: "0.8rem", fontWeight: 700, marginBottom: "14px" }}>
+            <Zap size={14} />
+            <span>STEP 6 • REDIS CACHED SEARCH & CATALOG FILTERING</span>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "20px" }}>
             <div>
-              <h2 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "10px", color: "var(--text-primary)" }}>
-                Product Catalog & RBAC Control
+              <h2 style={{ fontSize: "1.85rem", fontWeight: 800, marginBottom: "8px", color: "var(--text-primary)" }}>
+                Fast Product Search & Category Filtering
               </h2>
-              <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", maxWidth: "640px", lineHeight: 1.6 }}>
-                Admin users can create and publish new products via <code>react-hook-form</code> and <code>zod</code> schema validation. All GraphQL mutations are guarded with <strong>Role-Based Access Control</strong> (403 Forbidden for standard users).
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.925rem", maxWidth: "660px", lineHeight: 1.5 }}>
+                GraphQL queries are dynamically filtered in PostgreSQL via Prisma and cached in <strong>Redis (60s TTL)</strong> with automatic cache invalidation when new products are published.
               </p>
             </div>
 
@@ -287,29 +317,145 @@ export function App() {
                   display: "flex",
                   alignItems: "center",
                   gap: "8px",
-                  padding: "12px 22px",
+                  padding: "11px 20px",
                   backgroundColor: "var(--primary)",
                   color: "#ffffff",
                   fontWeight: 700,
-                  fontSize: "0.95rem",
+                  fontSize: "0.925rem",
                   borderRadius: "var(--radius-sm)",
                   boxShadow: "var(--shadow-glow)",
                 }}
               >
                 <Plus size={18} />
-                <span>Create New Product</span>
+                <span>Create Product</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Product Grid Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+        {/* Search & Filter Controls Bar */}
+        <div
+          style={{
+            backgroundColor: "var(--bg-card)",
+            padding: "20px",
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--border-color)",
+            marginBottom: "28px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+          }}
+        >
+          {/* Search Input & Sort Dropdown Row */}
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            <div style={{ position: "relative", flex: 1, minWidth: "260px" }}>
+              <Search size={18} style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+              <input
+                type="text"
+                placeholder="Search products by name or description..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "11px 14px 11px 42px",
+                  backgroundColor: "var(--bg-main)",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--text-primary)",
+                  fontSize: "0.9rem",
+                  outline: "none",
+                }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "transparent", color: "var(--text-muted)" }}
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <SlidersHorizontal size={18} style={{ color: "var(--text-muted)" }} />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                style={{
+                  padding: "11px 16px",
+                  backgroundColor: "var(--bg-main)",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--text-primary)",
+                  fontSize: "0.9rem",
+                  outline: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="newest">Newest Arrivals</option>
+                <option value="price_asc">Price: Low to High</option>
+                <option value="price_desc">Price: High to Low</option>
+                <option value="rating_desc">Highest Rated</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Category Filter Pills Row */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginRight: "4px" }}>
+              Category:
+            </span>
+            {categories.map((cat) => {
+              const isSelected = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "999px",
+                    fontSize: "0.825rem",
+                    fontWeight: 600,
+                    backgroundColor: isSelected ? "var(--primary)" : "var(--bg-main)",
+                    color: isSelected ? "#ffffff" : "var(--text-secondary)",
+                    border: `1px solid ${isSelected ? "var(--primary)" : "var(--border-color)"}`,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+
+            {hasActiveFilters && (
+              <button
+                onClick={resetFilters}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "6px 12px",
+                  borderRadius: "999px",
+                  fontSize: "0.8rem",
+                  color: "var(--danger)",
+                  backgroundColor: "rgba(239, 68, 68, 0.1)",
+                  border: "1px solid rgba(239, 68, 68, 0.25)",
+                  marginLeft: "auto",
+                }}
+              >
+                <X size={14} />
+                <span>Reset Filters</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Results Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Layers size={22} style={{ color: "var(--primary)" }} />
-            <h3 style={{ fontSize: "1.4rem", fontWeight: 800 }}>Product Catalog</h3>
-            <span style={{ fontSize: "0.85rem", padding: "3px 10px", borderRadius: "999px", backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" }}>
-              {products.length} Products
+            <h3 style={{ fontSize: "1.25rem", fontWeight: 800 }}>Available Products</h3>
+            <span style={{ fontSize: "0.8rem", padding: "2px 10px", borderRadius: "999px", backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" }}>
+              {products.length} {products.length === 1 ? "Product" : "Products"}
             </span>
           </div>
         </div>
@@ -317,15 +463,21 @@ export function App() {
         {/* Products Grid */}
         {productsLoading ? (
           <div style={{ textAlign: "center", padding: "60px", color: "var(--text-secondary)" }}>
-            Loading catalog products...
+            Loading products...
           </div>
         ) : products.length === 0 ? (
           <div style={{ textAlign: "center", padding: "60px", backgroundColor: "var(--bg-card)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
             <Package size={48} style={{ color: "var(--text-muted)", margin: "0 auto 12px" }} />
             <h4 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "6px" }}>No products found</h4>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-              {isAdmin ? "Click 'Create New Product' above to add products to your store." : "Check back later for new arrivals."}
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginBottom: "16px" }}>
+              No products match your search or filter criteria.
             </p>
+            <button
+              onClick={resetFilters}
+              style={{ padding: "8px 16px", backgroundColor: "var(--primary)", color: "#fff", borderRadius: "var(--radius-sm)", fontSize: "0.875rem", fontWeight: 600 }}
+            >
+              Clear All Filters
+            </button>
           </div>
         ) : (
           <div

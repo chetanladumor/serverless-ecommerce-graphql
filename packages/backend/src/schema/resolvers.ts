@@ -1,6 +1,8 @@
 import { GraphQLError } from "graphql";
 import { GraphQLContext } from "../context";
 import { hashPassword, comparePassword, generateToken } from "../services/authService";
+import { getCache, setCache, invalidateCachePattern } from "../config/redis";
+import type { Prisma } from "@prisma/client";
 
 interface RegisterInput {
   name: string;
@@ -20,6 +22,26 @@ interface CreateProductInput {
   category: string;
   imageUrl: string;
   stock: number;
+}
+
+interface ProductFilterInput {
+  search?: string;
+  category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  sortBy?: "price_asc" | "price_desc" | "rating_desc" | "newest";
+}
+
+interface FormattedProduct {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  category: string;
+  imageUrl: string;
+  stock: number;
+  rating: number;
+  createdAt: string;
 }
 
 export const resolvers = {
@@ -54,12 +76,64 @@ export const resolvers = {
       };
     },
 
-    products: async (_parent: unknown, _args: unknown, context: GraphQLContext) => {
+    products: async (
+      _parent: unknown,
+      { filter }: { filter?: ProductFilterInput },
+      context: GraphQLContext
+    ): Promise<FormattedProduct[]> => {
+      const search = filter?.search?.trim() || "";
+      const category = filter?.category?.trim() || "";
+      const minPrice = filter?.minPrice ?? 0;
+      const maxPrice = filter?.maxPrice ?? 999999;
+      const sortBy = filter?.sortBy || "newest";
+
+      // 1. Generate deterministic Redis Cache Key
+      const cacheKey = `products:c_${category || "all"}:q_${search || "none"}:min_${minPrice}:max_${maxPrice}:s_${sortBy}`;
+
+      // 2. Check Redis Cache
+      const cached = await getCache<FormattedProduct[]>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // 3. Build Prisma Where Clause
+      const where: Prisma.ProductWhereInput = {};
+
+      if (search) {
+        where.OR = [
+          { title: { contains: search, mode: "insensitive" } },
+          { description: { contains: search, mode: "insensitive" } },
+        ];
+      }
+
+      if (category && category !== "All") {
+        where.category = { equals: category, mode: "insensitive" };
+      }
+
+      if (filter?.minPrice !== undefined || filter?.maxPrice !== undefined) {
+        where.price = {
+          gte: minPrice,
+          lte: maxPrice,
+        };
+      }
+
+      // 4. Build Prisma OrderBy Clause
+      let orderBy: Prisma.ProductOrderByWithRelationInput = { createdAt: "desc" };
+      if (sortBy === "price_asc") {
+        orderBy = { price: "asc" };
+      } else if (sortBy === "price_desc") {
+        orderBy = { price: "desc" };
+      } else if (sortBy === "rating_desc") {
+        orderBy = { rating: "desc" };
+      }
+
+      // 5. Query PostgreSQL Database via Prisma
       const prods = await context.prisma.product.findMany({
-        orderBy: { createdAt: "desc" },
+        where,
+        orderBy,
       });
 
-      return prods.map((p) => ({
+      const formatted: FormattedProduct[] = prods.map((p) => ({
         id: p.id,
         title: p.title,
         description: p.description,
@@ -70,6 +144,57 @@ export const resolvers = {
         rating: p.rating,
         createdAt: p.createdAt.toISOString(),
       }));
+
+      // 6. Cache result in Redis for 60 seconds (TTL)
+      await setCache(cacheKey, formatted, 60);
+
+      return formatted;
+    },
+
+    categories: async (_parent: unknown, _args: unknown, context: GraphQLContext): Promise<string[]> => {
+      const cacheKey = "categories:distinct";
+      const cached = await getCache<string[]>(cacheKey);
+      if (cached) return cached;
+
+      const prods = await context.prisma.product.findMany({
+        select: { category: true },
+        distinct: ["category"],
+      });
+
+      const cats = prods.map((p) => p.category).filter(Boolean);
+      await setCache(cacheKey, cats, 300); // 5 minutes TTL
+      return cats;
+    },
+
+    product: async (
+      _parent: unknown,
+      { id }: { id: string },
+      context: GraphQLContext
+    ): Promise<FormattedProduct | null> => {
+      const cacheKey = `product:${id}`;
+      const cached = await getCache<FormattedProduct>(cacheKey);
+      if (cached) return cached;
+
+      const p = await context.prisma.product.findUnique({
+        where: { id },
+      });
+
+      if (!p) return null;
+
+      const formatted: FormattedProduct = {
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        price: p.price,
+        category: p.category,
+        imageUrl: p.imageUrl,
+        stock: p.stock,
+        rating: p.rating,
+        createdAt: p.createdAt.toISOString(),
+      };
+
+      await setCache(cacheKey, formatted, 120);
+      return formatted;
     },
   },
 
@@ -196,7 +321,6 @@ export const resolvers = {
       { input }: { input: CreateProductInput },
       context: GraphQLContext
     ) => {
-      // 1. Role-Based Access Control (RBAC) Guard
       if (!context.currentUser) {
         throw new GraphQLError("Authentication required. Please sign in.", {
           extensions: { code: "UNAUTHENTICATED" },
@@ -211,7 +335,6 @@ export const resolvers = {
 
       const { title, description, price, category, imageUrl, stock } = input;
 
-      // 2. Input validation
       if (!title || title.trim().length === 0) {
         throw new GraphQLError("Product title is required", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -230,7 +353,6 @@ export const resolvers = {
         });
       }
 
-      // 3. Persist product to database
       const product = await context.prisma.product.create({
         data: {
           title: title.trim(),
@@ -242,6 +364,10 @@ export const resolvers = {
           rating: 5.0,
         },
       });
+
+      // Invalidate Redis caches so search and category queries get fresh data
+      await invalidateCachePattern("products:*");
+      await invalidateCachePattern("categories:*");
 
       return {
         id: product.id,

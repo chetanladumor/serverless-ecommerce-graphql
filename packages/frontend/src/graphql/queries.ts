@@ -13,8 +13,8 @@ export const ME_QUERY = gql`
 `;
 
 export const PRODUCTS_QUERY = gql`
-  query Products {
-    products {
+  query Products($filter: ProductFilterInput) {
+    products(filter: $filter) {
       id
       title
       description
@@ -25,5 +25,11 @@ export const PRODUCTS_QUERY = gql`
       rating
       createdAt
     }
+  }
+`;
+
+export const CATEGORIES_QUERY = gql`
+  query Categories {
+    categories
   }
 `;
