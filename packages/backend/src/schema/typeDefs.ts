@@ -15,6 +15,18 @@ export const typeDefs = gql`
     user: User!
   }
 
+  type Product {
+    id: ID!
+    title: String!
+    description: String!
+    price: Float!
+    category: String!
+    imageUrl: String!
+    stock: Int!
+    rating: Float!
+    createdAt: String!
+  }
+
   # --- Inputs ---
   input RegisterInput {
     name: String!
@@ -27,15 +39,26 @@ export const typeDefs = gql`
     password: String!
   }
 
+  input CreateProductInput {
+    title: String!
+    description: String!
+    price: Float!
+    category: String!
+    imageUrl: String!
+    stock: Int!
+  }
+
   # --- Queries ---
   type Query {
     health: String!
     me: User
+    products: [Product!]!
   }
 
   # --- Mutations ---
   type Mutation {
     register(input: RegisterInput!): AuthPayload!
     login(input: LoginInput!): AuthPayload!
+    createProduct(input: CreateProductInput!): Product!
   }
 `;

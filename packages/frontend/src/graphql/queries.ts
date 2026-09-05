@@ -11,3 +11,19 @@ export const ME_QUERY = gql`
     }
   }
 `;
+
+export const PRODUCTS_QUERY = gql`
+  query Products {
+    products {
+      id
+      title
+      description
+      price
+      category
+      imageUrl
+      stock
+      rating
+      createdAt
+    }
+  }
+`;

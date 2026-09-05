@@ -13,6 +13,15 @@ interface LoginInput {
   password: string;
 }
 
+interface CreateProductInput {
+  title: string;
+  description: string;
+  price: number;
+  category: string;
+  imageUrl: string;
+  stock: number;
+}
+
 export const resolvers = {
   Query: {
     health: (_parent: unknown, _args: unknown, _context: GraphQLContext): string => {
@@ -20,14 +29,12 @@ export const resolvers = {
     },
 
     me: async (_parent: unknown, _args: unknown, context: GraphQLContext) => {
-      // 1. Check if user is authenticated from context
       if (!context.currentUser) {
         throw new GraphQLError("Authentication required. Please log in.", {
           extensions: { code: "UNAUTHENTICATED" },
         });
       }
 
-      // 2. Fetch fresh user record from PostgreSQL
       const user = await context.prisma.user.findUnique({
         where: { id: context.currentUser.id },
       });
@@ -46,6 +53,24 @@ export const resolvers = {
         createdAt: user.createdAt.toISOString(),
       };
     },
+
+    products: async (_parent: unknown, _args: unknown, context: GraphQLContext) => {
+      const prods = await context.prisma.product.findMany({
+        orderBy: { createdAt: "desc" },
+      });
+
+      return prods.map((p) => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        price: p.price,
+        category: p.category,
+        imageUrl: p.imageUrl,
+        stock: p.stock,
+        rating: p.rating,
+        createdAt: p.createdAt.toISOString(),
+      }));
+    },
   },
 
   Mutation: {
@@ -56,7 +81,6 @@ export const resolvers = {
     ) => {
       const { name, email, password } = input;
 
-      // 1. Validation
       if (!name || name.trim().length === 0) {
         throw new GraphQLError("Name is required", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -77,7 +101,6 @@ export const resolvers = {
 
       const normalizedEmail = email.toLowerCase().trim();
 
-      // 2. Check if user already exists
       const existingUser = await context.prisma.user.findUnique({
         where: { email: normalizedEmail },
       });
@@ -88,10 +111,8 @@ export const resolvers = {
         });
       }
 
-      // 3. Hash the password with bcrypt
       const hashedPassword = await hashPassword(password);
 
-      // 4. Create user in PostgreSQL database via Prisma
       const user = await context.prisma.user.create({
         data: {
           name: name.trim(),
@@ -101,7 +122,6 @@ export const resolvers = {
         },
       });
 
-      // 5. Generate signed JWT token
       const token = generateToken({
         id: user.id,
         email: user.email,
@@ -127,7 +147,6 @@ export const resolvers = {
     ) => {
       const { email, password } = input;
 
-      // 1. Validation
       if (!email || !password) {
         throw new GraphQLError("Please provide both email and password", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -136,7 +155,6 @@ export const resolvers = {
 
       const normalizedEmail = email.toLowerCase().trim();
 
-      // 2. Find user in database
       const user = await context.prisma.user.findUnique({
         where: { email: normalizedEmail },
       });
@@ -147,7 +165,6 @@ export const resolvers = {
         });
       }
 
-      // 3. Verify bcrypt password hash
       const isPasswordValid = await comparePassword(password, user.password);
 
       if (!isPasswordValid) {
@@ -156,7 +173,6 @@ export const resolvers = {
         });
       }
 
-      // 4. Generate signed JWT token
       const token = generateToken({
         id: user.id,
         email: user.email,
@@ -172,6 +188,71 @@ export const resolvers = {
           role: user.role,
           createdAt: user.createdAt.toISOString(),
         },
+      };
+    },
+
+    createProduct: async (
+      _parent: unknown,
+      { input }: { input: CreateProductInput },
+      context: GraphQLContext
+    ) => {
+      // 1. Role-Based Access Control (RBAC) Guard
+      if (!context.currentUser) {
+        throw new GraphQLError("Authentication required. Please sign in.", {
+          extensions: { code: "UNAUTHENTICATED" },
+        });
+      }
+
+      if (context.currentUser.role !== "ADMIN") {
+        throw new GraphQLError("Forbidden. Admin access is required to create products.", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+
+      const { title, description, price, category, imageUrl, stock } = input;
+
+      // 2. Input validation
+      if (!title || title.trim().length === 0) {
+        throw new GraphQLError("Product title is required", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      if (price <= 0) {
+        throw new GraphQLError("Product price must be greater than 0", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      if (stock < 0) {
+        throw new GraphQLError("Stock cannot be negative", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+
+      // 3. Persist product to database
+      const product = await context.prisma.product.create({
+        data: {
+          title: title.trim(),
+          description: description.trim(),
+          price: Number(price),
+          category: category.trim(),
+          imageUrl: imageUrl.trim(),
+          stock: Number(stock),
+          rating: 5.0,
+        },
+      });
+
+      return {
+        id: product.id,
+        title: product.title,
+        description: product.description,
+        price: product.price,
+        category: product.category,
+        imageUrl: product.imageUrl,
+        stock: product.stock,
+        rating: product.rating,
+        createdAt: product.createdAt.toISOString(),
       };
     },
   },
