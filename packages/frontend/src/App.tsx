@@ -44,6 +44,7 @@ export function App() {
       }
     },
     onError: () => {
+      // Token invalid or expired
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       setCurrentUser(null);

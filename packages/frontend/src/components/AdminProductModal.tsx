@@ -31,6 +31,9 @@ const productFormSchema = z.object({
     .nonnegative("Stock cannot be negative"),
 });
 
+// Automatically extract the TypeScript type from the runtime Zod validation schema.
+// This enforces "Single Source of Truth" (DRY) so you don't need to write a separate
+// TypeScript interface manually. If the schema changes, the TypeScript type updates automatically!
 export type ProductFormValues = z.infer<typeof productFormSchema>;
 
 interface AdminProductModalProps {
