@@ -27,6 +27,22 @@ export const typeDefs = gql`
     createdAt: String!
   }
 
+  type CartItem {
+    id: ID!
+    userId: ID!
+    productId: ID!
+    quantity: Int!
+    product: Product!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type CartPayload {
+    items: [CartItem!]!
+    totalItems: Int!
+    subtotal: Float!
+  }
+
   # --- Inputs ---
   input RegisterInput {
     name: String!
@@ -56,6 +72,16 @@ export const typeDefs = gql`
     sortBy: String # "price_asc" | "price_desc" | "rating_desc" | "newest"
   }
 
+  input AddToCartInput {
+    productId: ID!
+    quantity: Int
+  }
+
+  input UpdateCartItemInput {
+    cartItemId: ID!
+    quantity: Int!
+  }
+
   # --- Queries ---
   type Query {
     health: String!
@@ -63,6 +89,7 @@ export const typeDefs = gql`
     products(filter: ProductFilterInput): [Product!]!
     categories: [String!]!
     product(id: ID!): Product
+    cart: CartPayload!
   }
 
   # --- Mutations ---
@@ -70,5 +97,9 @@ export const typeDefs = gql`
     register(input: RegisterInput!): AuthPayload!
     login(input: LoginInput!): AuthPayload!
     createProduct(input: CreateProductInput!): Product!
+    addToCart(input: AddToCartInput!): CartPayload!
+    updateCartItem(input: UpdateCartItemInput!): CartPayload!
+    removeFromCart(cartItemId: ID!): CartPayload!
+    clearCart: Boolean!
   }
 `;

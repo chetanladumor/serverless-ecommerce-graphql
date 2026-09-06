@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@apollo/client";
-import { ME_QUERY, PRODUCTS_QUERY, CATEGORIES_QUERY } from "./graphql/queries";
+import { useQuery, useMutation } from "@apollo/client";
+import { ME_QUERY, PRODUCTS_QUERY, CATEGORIES_QUERY, CART_QUERY } from "./graphql/queries";
+import { ADD_TO_CART_MUTATION } from "./graphql/mutations";
 import { apolloClient } from "./apollo/client";
 import { AuthModal, UserData } from "./components/AuthModal";
 import { AdminProductModal } from "./components/AdminProductModal";
+import { CartDrawer, CartPayloadData } from "./components/CartDrawer";
 import {
   User,
   LogOut,
@@ -15,6 +17,8 @@ import {
   SlidersHorizontal,
   X,
   Zap,
+  ShoppingCart,
+  Check,
 } from "lucide-react";
 
 export interface ProductData {
@@ -33,7 +37,9 @@ export function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [isAdminProductOpen, setIsAdminProductOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
+  const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -76,6 +82,24 @@ export function App() {
     fetchPolicy: "cache-and-network",
   });
 
+  // 4. Fetch Cart data
+  const {
+    data: cartData,
+    loading: cartLoading,
+    refetch: refetchCart,
+  } = useQuery(CART_QUERY, {
+    skip: !token,
+    fetchPolicy: "cache-and-network",
+  });
+
+  // 5. Add to Cart Mutation with Optimistic UI response
+  const [addToCart, { loading: addingToCart }] = useMutation(ADD_TO_CART_MUTATION, {
+    refetchQueries: [{ query: CART_QUERY }],
+    onCompleted: () => {
+      // Optional: automatically open cart or show toast
+    },
+  });
+
   useEffect(() => {
     if (meData?.me) {
       setCurrentUser(meData.me);
@@ -99,6 +123,7 @@ export function App() {
   const handleAuthSuccess = (user: UserData) => {
     setCurrentUser(user);
     refetchMe();
+    refetchCart();
   };
 
   const handleLogout = async () => {
@@ -115,8 +140,29 @@ export function App() {
     setSortBy("newest");
   };
 
+  const handleAddToCartClick = (product: ProductData) => {
+    if (!currentUser) {
+      openAuth("login");
+      return;
+    }
+
+    setAddedProductId(product.id);
+    setTimeout(() => setAddedProductId(null), 1500);
+
+    addToCart({
+      variables: {
+        input: {
+          productId: product.id,
+          quantity: 1,
+        },
+      },
+    });
+  };
+
   const products: ProductData[] = productsData?.products || [];
   const categories: string[] = ["All", ...(categoriesData?.categories || [])];
+  const cart: CartPayloadData | null = cartData?.cart || null;
+  const totalCartItems = cart?.totalItems || 0;
   const isAdmin = currentUser?.role === "ADMIN";
   const hasActiveFilters = searchQuery !== "" || selectedCategory !== "All" || sortBy !== "newest";
 
@@ -176,6 +222,48 @@ export function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            {/* Cart Button with Count Badge */}
+            <button
+              onClick={() => {
+                if (!currentUser) {
+                  openAuth("login");
+                } else {
+                  setIsCartOpen(true);
+                }
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 16px",
+                backgroundColor: "var(--bg-main)",
+                border: "1px solid var(--border-color)",
+                borderRadius: "999px",
+                color: "var(--text-primary)",
+                fontWeight: 700,
+                fontSize: "0.875rem",
+                position: "relative",
+              }}
+            >
+              <ShoppingCart size={18} style={{ color: "var(--primary)" }} />
+              <span>Cart</span>
+              {totalCartItems > 0 && (
+                <span
+                  style={{
+                    backgroundColor: "var(--primary)",
+                    color: "#fff",
+                    fontSize: "0.75rem",
+                    fontWeight: 800,
+                    padding: "2px 7px",
+                    borderRadius: "999px",
+                    boxShadow: "0 0 10px var(--primary)",
+                  }}
+                >
+                  {totalCartItems}
+                </span>
+              )}
+            </button>
+
             {isAdmin && (
               <button
                 onClick={() => setIsAdminProductOpen(true)}
@@ -297,22 +385,22 @@ export function App() {
         >
           <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 14px", borderRadius: "999px", backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--primary)", fontSize: "0.8rem", fontWeight: 700, marginBottom: "14px" }}>
             <Zap size={14} />
-            <span>STEP 6 • REDIS CACHED SEARCH & CATALOG FILTERING</span>
+            <span>STEP 7 • SHOPPING CART & DATALOADER (N+1 SOLVED)</span>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "20px" }}>
             <div>
               <h2 style={{ fontSize: "1.85rem", fontWeight: 800, marginBottom: "8px", color: "var(--text-primary)" }}>
-                Fast Product Search & Category Filtering
+                Shopping Cart & Batch Data Loading
               </h2>
               <p style={{ color: "var(--text-secondary)", fontSize: "0.925rem", maxWidth: "660px", lineHeight: 1.5 }}>
-                GraphQL queries are dynamically filtered in PostgreSQL via Prisma and cached in <strong>Redis (60s TTL)</strong> with automatic cache invalidation when new products are published.
+                Add products to your cart with instant UI updates. Backend field resolvers leverage <strong>DataLoader</strong> to batch database queries, completely eliminating the GraphQL <strong>N+1 query problem</strong>.
               </p>
             </div>
 
-            {isAdmin && (
+            {totalCartItems > 0 && (
               <button
-                onClick={() => setIsAdminProductOpen(true)}
+                onClick={() => setIsCartOpen(true)}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -326,8 +414,8 @@ export function App() {
                   boxShadow: "var(--shadow-glow)",
                 }}
               >
-                <Plus size={18} />
-                <span>Create Product</span>
+                <ShoppingCart size={18} />
+                <span>View Cart ({totalCartItems})</span>
               </button>
             )}
           </div>
@@ -487,75 +575,120 @@ export function App() {
               gap: "24px",
             }}
           >
-            {products.map((product) => (
-              <div
-                key={product.id}
-                style={{
-                  backgroundColor: "var(--bg-card)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--border-color)",
-                  overflow: "hidden",
-                  display: "flex",
-                  flexDirection: "column",
-                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                }}
-              >
-                <div style={{ position: "relative", width: "100%", height: "200px", backgroundColor: "var(--bg-main)" }}>
-                  <img
-                    src={product.imageUrl}
-                    alt={product.title}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={(e) => {
-                      e.currentTarget.src = "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=600&auto=format&fit=crop&q=80";
-                    }}
-                  />
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: "12px",
-                      left: "12px",
-                      padding: "4px 10px",
-                      borderRadius: "999px",
-                      fontSize: "0.75rem",
-                      fontWeight: 700,
-                      backgroundColor: "rgba(15, 23, 42, 0.85)",
-                      backdropFilter: "blur(6px)",
-                      color: "var(--accent)",
-                    }}
-                  >
-                    {product.category}
-                  </span>
-                </div>
+            {products.map((product) => {
+              const isJustAdded = addedProductId === product.id;
+              const isOutOfStock = product.stock <= 0;
 
-                <div style={{ padding: "20px", display: "flex", flexDirection: "column", flex: 1 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                    <h4 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)" }}>{product.title}</h4>
-                    <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#fbbf24", fontSize: "0.85rem", fontWeight: 700 }}>
-                      <Star size={14} fill="#fbbf24" />
-                      <span>{product.rating.toFixed(1)}</span>
-                    </div>
+              return (
+                <div
+                  key={product.id}
+                  style={{
+                    backgroundColor: "var(--bg-card)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--border-color)",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                  }}
+                >
+                  <div style={{ position: "relative", width: "100%", height: "200px", backgroundColor: "var(--bg-main)" }}>
+                    <img
+                      src={product.imageUrl}
+                      alt={product.title}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      onError={(e) => {
+                        e.currentTarget.src = "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=600&auto=format&fit=crop&q=80";
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: "12px",
+                        left: "12px",
+                        padding: "4px 10px",
+                        borderRadius: "999px",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        backgroundColor: "rgba(15, 23, 42, 0.85)",
+                        backdropFilter: "blur(6px)",
+                        color: "var(--accent)",
+                      }}
+                    >
+                      {product.category}
+                    </span>
                   </div>
 
-                  <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", lineHeight: 1.5, marginBottom: "16px", flex: 1 }}>
-                    {product.description}
-                  </p>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "14px", borderTop: "1px solid var(--border-color)" }}>
-                    <div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Price</div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--primary)" }}>${product.price.toFixed(2)}</div>
-                    </div>
-
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Stock</div>
-                      <div style={{ fontSize: "0.85rem", fontWeight: 700, color: product.stock > 0 ? "var(--success)" : "var(--danger)" }}>
-                        {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
+                  <div style={{ padding: "20px", display: "flex", flexDirection: "column", flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                      <h4 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)" }}>{product.title}</h4>
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#fbbf24", fontSize: "0.85rem", fontWeight: 700 }}>
+                        <Star size={14} fill="#fbbf24" />
+                        <span>{product.rating.toFixed(1)}</span>
                       </div>
                     </div>
+
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", lineHeight: 1.5, marginBottom: "16px", flex: 1 }}>
+                      {product.description}
+                    </p>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Price</div>
+                        <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--primary)" }}>${product.price.toFixed(2)}</div>
+                      </div>
+
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Availability</div>
+                        <div style={{ fontSize: "0.85rem", fontWeight: 700, color: product.stock > 0 ? "var(--success)" : "var(--danger)" }}>
+                          {product.stock > 0 ? `${product.stock} left` : "Out of stock"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Add to Cart Button */}
+                    <button
+                      onClick={() => handleAddToCartClick(product)}
+                      disabled={isOutOfStock || addingToCart}
+                      style={{
+                        width: "100%",
+                        padding: "11px",
+                        backgroundColor: isJustAdded
+                          ? "var(--success)"
+                          : isOutOfStock
+                          ? "var(--bg-main)"
+                          : "var(--primary)",
+                        color: isOutOfStock ? "var(--text-muted)" : "#ffffff",
+                        border: isOutOfStock ? "1px solid var(--border-color)" : "none",
+                        borderRadius: "var(--radius-sm)",
+                        fontWeight: 700,
+                        fontSize: "0.9rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "8px",
+                        transition: "all 0.2s ease",
+                        boxShadow: isJustAdded || isOutOfStock ? "none" : "var(--shadow-glow)",
+                      }}
+                    >
+                      {isJustAdded ? (
+                        <>
+                          <Check size={16} />
+                          <span>Added to Cart!</span>
+                        </>
+                      ) : isOutOfStock ? (
+                        <span>Out of Stock</span>
+                      ) : (
+                        <>
+                          <ShoppingCart size={16} />
+                          <span>Add to Cart</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
@@ -572,6 +705,17 @@ export function App() {
         isOpen={isAdminProductOpen}
         onClose={() => setIsAdminProductOpen(false)}
         onSuccess={() => refetchProducts()}
+      />
+
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cart={cart}
+        loading={cartLoading}
+        onCheckout={() => {
+          setIsCartOpen(false);
+          alert("Proceeding to Step 8: Order Placement & Checkout!");
+        }}
       />
     </div>
   );

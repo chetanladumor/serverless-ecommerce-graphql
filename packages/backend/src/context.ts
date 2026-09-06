@@ -2,13 +2,19 @@ import { PrismaClient } from "@prisma/client";
 import { prisma } from "./config/prisma";
 import { redis } from "./config/redis";
 import { verifyToken, TokenPayload } from "./services/authService";
+import { createProductLoader } from "./dataloaders/productLoader";
 import type { Request } from "express";
 import type Redis from "ioredis";
+
+export interface GraphQLDataLoaders {
+  productLoader: ReturnType<typeof createProductLoader>;
+}
 
 export interface GraphQLContext {
   prisma: PrismaClient;
   redis: Redis;
   currentUser: TokenPayload | null;
+  dataloaders: GraphQLDataLoaders;
   req?: Request | any;
 }
 
@@ -25,10 +31,16 @@ export async function buildContext(req?: Request | any): Promise<GraphQLContext>
     }
   }
 
+  // DataLoaders MUST be instantiated fresh per request for correct caching lifecycle
+  const dataloaders: GraphQLDataLoaders = {
+    productLoader: createProductLoader(prisma),
+  };
+
   return {
     prisma,
     redis,
     currentUser,
+    dataloaders,
     req,
   };
 }

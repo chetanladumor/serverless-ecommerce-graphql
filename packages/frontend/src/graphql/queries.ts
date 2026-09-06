@@ -33,3 +33,30 @@ export const CATEGORIES_QUERY = gql`
     categories
   }
 `;
+
+export const CART_QUERY = gql`
+  query GetCart {
+    cart {
+      totalItems
+      subtotal
+      items {
+        id
+        userId
+        productId
+        quantity
+        createdAt
+        updatedAt
+        product {
+          id
+          title
+          description
+          price
+          category
+          imageUrl
+          stock
+          rating
+        }
+      }
+    }
+  }
+`;
