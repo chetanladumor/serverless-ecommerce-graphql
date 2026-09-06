@@ -60,29 +60,58 @@ async function getCartPayload(userId: string, context: GraphQLContext) {
     orderBy: { createdAt: "desc" },
   });
 
-  // Calculate totals by loading all products through DataLoader concurrently (batched in 1 query)
   let totalItems = 0;
   let subtotal = 0;
 
-  const formattedItems = await Promise.all(
-    items.map(async (item) => {
-      totalItems += item.quantity;
-      // All items call loader.load() in the same tick -> Batched in 1 SQL query!
-      const product = await context.dataloaders.productLoader.load(item.productId);
-      if (product) {
-        subtotal += product.price * item.quantity;
-      }
+  // Approach 1 (Explicit DataLoader Multi-Key API):
+  // Collect all product IDs into an array and pass them to loader.loadMany() in a single call.
+  const productIds = items.map((item) => item.productId);
+  const loadedProducts = await context.dataloaders.productLoader.loadMany(productIds);
 
-      return {
-        id: item.id,
-        userId: item.userId,
-        productId: item.productId,
-        quantity: item.quantity,
-        createdAt: item.createdAt.toISOString(),
-        updatedAt: item.updatedAt.toISOString(),
-      };
-    })
-  );
+  const formattedItems = items.map((item, index) => {
+    totalItems += item.quantity;
+    const product = loadedProducts[index];
+
+    // Check if loaded product is a valid object (not an Error)
+    if (product && !(product instanceof Error)) {
+      subtotal += product.price * item.quantity;
+    }
+
+    return {
+      id: item.id,
+      userId: item.userId,
+      productId: item.productId,
+      quantity: item.quantity,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+    };
+  });
+
+  /*
+   * Approach 2 (Promise.all with items.map):
+   * Note: This approach ALSO works and batches correctly!
+   * Why? Because items.map() is a synchronous C++ loop in V8 that invokes all
+   * loader.load(id) calls in the SAME event loop tick, pushing all IDs into
+   * DataLoader's queue before any DB query executes.
+   *
+   * const formattedItems = await Promise.all(
+   *   items.map(async (item) => {
+   *     totalItems += item.quantity;
+   *     const product = await context.dataloaders.productLoader.load(item.productId);
+   *     if (product) {
+   *       subtotal += product.price * item.quantity;
+   *     }
+   *     return {
+   *       id: item.id,
+   *       userId: item.userId,
+   *       productId: item.productId,
+   *       quantity: item.quantity,
+   *       createdAt: item.createdAt.toISOString(),
+   *       updatedAt: item.updatedAt.toISOString(),
+   *     };
+   *   })
+   * );
+   */
 
   return {
     items: formattedItems,
