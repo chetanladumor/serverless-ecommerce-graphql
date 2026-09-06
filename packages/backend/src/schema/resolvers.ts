@@ -60,26 +60,29 @@ async function getCartPayload(userId: string, context: GraphQLContext) {
     orderBy: { createdAt: "desc" },
   });
 
-  // Calculate totals by loading products through DataLoader (batched & cached)
+  // Calculate totals by loading all products through DataLoader concurrently (batched & cached)
   let totalItems = 0;
   let subtotal = 0;
 
-  const formattedItems = [];
-  for (const item of items) {
-    totalItems += item.quantity;
-    const product = await context.dataloaders.productLoader.load(item.productId);
-    if (product) {
-      subtotal += product.price * item.quantity;
-    }
-    formattedItems.push({
-      id: item.id,
-      userId: item.userId,
-      productId: item.productId,
-      quantity: item.quantity,
-      createdAt: item.createdAt.toISOString(),
-      updatedAt: item.updatedAt.toISOString(),
-    });
-  }
+  const formattedItems = await Promise.all(
+    items.map(async (item) => {
+      totalItems += item.quantity;
+      // All items call loader.load() in the same tick -> Batched in 1 SQL query!
+      const product = await context.dataloaders.productLoader.load(item.productId);
+      if (product) {
+        subtotal += product.price * item.quantity;
+      }
+
+      return {
+        id: item.id,
+        userId: item.userId,
+        productId: item.productId,
+        quantity: item.quantity,
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString(),
+      };
+    })
+  );
 
   return {
     items: formattedItems,
