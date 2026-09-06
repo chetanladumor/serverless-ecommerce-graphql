@@ -60,7 +60,7 @@ async function getCartPayload(userId: string, context: GraphQLContext) {
     orderBy: { createdAt: "desc" },
   });
 
-  // Calculate totals by loading all products through DataLoader concurrently (batched & cached)
+  // Calculate totals by loading all products through DataLoader concurrently (batched in 1 query)
   let totalItems = 0;
   let subtotal = 0;
 
