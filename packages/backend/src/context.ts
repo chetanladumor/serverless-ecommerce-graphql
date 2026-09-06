@@ -15,6 +15,7 @@ export interface GraphQLContext {
 export async function buildContext(req?: Request | any): Promise<GraphQLContext> {
   let currentUser: TokenPayload | null = null;
 
+  // Extract Authorization header: "Bearer <token>"
   const authHeader = req?.headers?.authorization || req?.headers?.Authorization;
 
   if (authHeader && typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {

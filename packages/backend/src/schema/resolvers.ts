@@ -51,12 +51,14 @@ export const resolvers = {
     },
 
     me: async (_parent: unknown, _args: unknown, context: GraphQLContext) => {
+      // 1. Check if user is authenticated from context
       if (!context.currentUser) {
         throw new GraphQLError("Authentication required. Please log in.", {
           extensions: { code: "UNAUTHENTICATED" },
         });
       }
 
+      // 2. Fetch fresh user record from PostgreSQL
       const user = await context.prisma.user.findUnique({
         where: { id: context.currentUser.id },
       });
@@ -96,7 +98,7 @@ export const resolvers = {
         return cached;
       }
 
-      // 3. Build Prisma Where Clause
+      // 3. Build Prisma Where Clause for dynamic filtering
       const where: Prisma.ProductWhereInput = {};
 
       if (search) {
@@ -206,6 +208,7 @@ export const resolvers = {
     ) => {
       const { name, email, password } = input;
 
+      // 1. Validation
       if (!name || name.trim().length === 0) {
         throw new GraphQLError("Name is required", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -226,6 +229,7 @@ export const resolvers = {
 
       const normalizedEmail = email.toLowerCase().trim();
 
+      // 2. Check if user already exists
       const existingUser = await context.prisma.user.findUnique({
         where: { email: normalizedEmail },
       });
@@ -236,8 +240,10 @@ export const resolvers = {
         });
       }
 
+      // 3. Hash the password with bcrypt
       const hashedPassword = await hashPassword(password);
 
+      // 4. Create user in PostgreSQL database via Prisma
       const user = await context.prisma.user.create({
         data: {
           name: name.trim(),
@@ -247,6 +253,7 @@ export const resolvers = {
         },
       });
 
+      // 5. Generate signed JWT token
       const token = generateToken({
         id: user.id,
         email: user.email,
@@ -272,6 +279,7 @@ export const resolvers = {
     ) => {
       const { email, password } = input;
 
+      // 1. Validation
       if (!email || !password) {
         throw new GraphQLError("Please provide both email and password", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -280,6 +288,7 @@ export const resolvers = {
 
       const normalizedEmail = email.toLowerCase().trim();
 
+      // 2. Find user in database
       const user = await context.prisma.user.findUnique({
         where: { email: normalizedEmail },
       });
@@ -290,6 +299,7 @@ export const resolvers = {
         });
       }
 
+      // 3. Verify bcrypt password hash
       const isPasswordValid = await comparePassword(password, user.password);
 
       if (!isPasswordValid) {
@@ -298,6 +308,7 @@ export const resolvers = {
         });
       }
 
+      // 4. Generate signed JWT token
       const token = generateToken({
         id: user.id,
         email: user.email,
@@ -321,6 +332,7 @@ export const resolvers = {
       { input }: { input: CreateProductInput },
       context: GraphQLContext
     ) => {
+      // 1. Role-Based Access Control (RBAC) Guard
       if (!context.currentUser) {
         throw new GraphQLError("Authentication required. Please sign in.", {
           extensions: { code: "UNAUTHENTICATED" },
@@ -335,6 +347,7 @@ export const resolvers = {
 
       const { title, description, price, category, imageUrl, stock } = input;
 
+      // 2. Input validation
       if (!title || title.trim().length === 0) {
         throw new GraphQLError("Product title is required", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -353,6 +366,7 @@ export const resolvers = {
         });
       }
 
+      // 3. Persist product to database
       const product = await context.prisma.product.create({
         data: {
           title: title.trim(),
@@ -365,7 +379,7 @@ export const resolvers = {
         },
       });
 
-      // Invalidate Redis caches so search and category queries get fresh data
+      // 4. Invalidate Redis caches so search and category queries get fresh data
       await invalidateCachePattern("products:*");
       await invalidateCachePattern("categories:*");
 
